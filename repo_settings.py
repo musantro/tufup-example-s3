@@ -1,7 +1,19 @@
+import os
+from pathlib import Path
 import logging
-import pathlib
 
+from dotenv import load_dotenv
 from tufup.repo import DEFAULT_KEY_MAP, DEFAULT_KEYS_DIR_NAME, DEFAULT_REPO_DIR_NAME
+
+# project directory
+PROJECT_DIR = Path(__file__).resolve().parent
+
+# load environment variables from .env
+load_dotenv()
+
+# rclone config
+RCLONE_CONF = PROJECT_DIR / '.rclone.conf'
+os.environ['RCLONE_CONFIG_FILE'] = str(RCLONE_CONF)
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +27,18 @@ safe and should *not* be used in production.
 
 """
 
-# Path to directory containing current module
-MODULE_DIR = pathlib.Path(__file__).resolve().parent
-
 # For development
-DEV_DIR = MODULE_DIR / 'temp_my_app'
+DEV_DIR = PROJECT_DIR / '.tmp'
 PYINSTALLER_DIST_DIR_NAME = 'dist'
 DIST_DIR = DEV_DIR / PYINSTALLER_DIST_DIR_NAME
 
 # Local repo path and keys path (would normally be offline)
 KEYS_DIR = DEV_DIR / DEFAULT_KEYS_DIR_NAME
 REPO_DIR = DEV_DIR / DEFAULT_REPO_DIR_NAME
+
+# remotes
+PRIVATE_REMOTE = os.environ['PRIVATE_REMOTE']
+CLIENT_REMOTE = os.environ['CLIENT_REMOTE']
 
 # Key settings
 KEY_NAME = 'my_key'

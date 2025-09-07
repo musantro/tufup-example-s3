@@ -1,142 +1,158 @@
-# Tufup (TUF-updater) example application 
+# Tufup example for production (S3, or any filesystem)
 
-This repository shows how to use the [tufup][1] package for automated application updates.
+This repository demonstrates using the `tufup` package to perform automated
+application updates with a modern, more production ready example app (`myapp`)
+and an rclone-backed repository that can simulate local or remote storage (S3,
+remote filesystems, etc.). The examples are intended to be closer to a
+production workflow while remaining easy to run locally for development and
+testing.
 
-This is done by means of a dummy Windows-application, called `myapp`, that uses `tufup` in combination with `pyinstaller`. 
+This is an iteration of the great `tufup-example` project.
 
-NOTE: Although the example `myapp` is bundled using `pyinstaller`, this is not required: `tufup` is completely independent of `pyinstaller`, and can be used with *any* bundle of files.
+## Important highlights
 
-NOTE: Although the example application is written for Windows (or macOS), this only pertains to the directories, defined in `settings.py`, and the script used to run `pyinstaller`.
-You can simply adapt these to use the example on other operating systems.
+- The example app lives in `src/myapp`.
+- Repository provisioning and publishing scripts use `rclone` to simulate
+  private and client remotes (`PRIVATE_REMOTE` and `CLIENT_REMOTE`).
+- Configuration lives in `repo_settings.py` and can be controlled with
+  environment variables and a local `.rclone.conf` (see below).
+- The example uses PyInstaller for creating a distributable bundle, but `tufup`
+  itself is bundle-agnostic — any archive/directory representing your app works.
 
-## Questions
+## Security disclaimer
 
-If you have any questions, please make sure to check the [existing discussions][5] and [existing issues][6] first. (Also check [`tufup` discussions][10] and [`tufup` issues][11].)
+This example is intentionally simple to make it easy to follow the flow. For
+convenience it uses an unencrypted private key file and a single key for all
+roles. This is NOT secure for production. Do not reuse this key strategy for
+real deployments. See TUF docs for best practices.
 
-New *questions* can be asked in the [Q&A][9] or on [stackoverflow][8], and *bugs* related to `tufup-example` can be reported [here][7].
+## Quick prerequisites
 
-## Setup
+- Python 3.10+ (or the version this project targets)
+- `uv` (for installing Python dependencies)
 
-Create a virtualenv (or equivalent) and install requirements:
+Install project requirements
 
-`pip install -r requirements.txt -r requirements-dev.txt --upgrade`
-
-## Getting started
-
-For basic terminology, see documentation for [TUF (The Update Framework)][2].
-
-We start out with a dummy application that has already integrated the `tufup.client`.
-See `src/myapp/__init__.py` for details.
-
-The dummy application is bundled using [PyInstaller][3], but `tufup` works with any type of "application bundle" (i.e. just a directory with content representing the application).
-
-The example includes a basic PyInstaller `.spec` file that ensures the `tufup` root metadata file (`root.json`) is included in the application bundle.
-
-The dummy *application* specifies where all `tufup`-related  files will be stored.
-This is illustrated in `settings.py`. 
-
-The following basic steps are covered:
-
-1. initialize a repository
-2. initial release   
-   1. build the application, including trusted root metadata from the repository
-   2. create an archive for the application and register it in the repo
-3. second release
-   1. build the new release
-   2. create an archive for the new release, create a patch, and register both in the repo
-4. serve the repository on a local test server
-5. run the "installed" application, so it can perform an automatic update
-
-> For quick testing, these steps have been automated in the [PowerShell][12] script [`test_update_cycle.ps1`][13].
-
-A detailed description of the steps, both for the repository-side and for the client-side, can be found in the following sections.
-
-### Repo side
-
-Some example scripts are provided for initializing a tufup repository and for adding new versions, see `repo_*.py`.
-
-Alternatively, `tufup` offers a command line interface (CLI) for repository actions. 
-Type `tufup -h` on the command line for more information. 
-
-Here's how to set up the example tufup repository, starting from a clean repo, i.e. no `temp_my_app` dir is present in the repo root (as defined by `DEV_DIR` in `settings.py`):
-
-Note: If you use the CLI, see `repo_settings.py` for sensible values.
-
-1. run `repo_init.py` (CLI: `tufup init`)
-2. run `create_pyinstaller_bundle_win.bat` or `create_pyinstaller_bundle_mac.sh`
-   (note that our `main.spec` ensures that the latest `root.json` metadata file is included in the bundle)
-3. run `repo_add_bundle.py` (CLI: `tufup targets add 1.0 temp_my_app/dist/main temp_my_app/keystore`)
-4. modify the app, and/or increment `APP_VERSION` in `myapp/settings.py`
-5. run the `create_pyinstaller_bundle` script again
-6. run `repo_add_bundle.py` again (CLI: `tufup targets add 2.0 temp_my_app/dist temp_my_app/keystore`)
-
-Note: When adding a bundle, `tufup` creates a patch by default, which can take quite some time.
-If you want to skip patch creation, either set `skip_patch=True` in the `Repository.add_bundle()` call, or add the  `-s` option to the CLI command: `tufup targets add -s 2.0 ...`.
-
-Now we should have a `temp_my_app` dir with the following structure:
-
-```text
-temp_my_app
-├ build
-├ dist
-├ keystore
-└ repository
-  ├ metadata
-  └ targets 
+```
+uv sync
 ```
 
-In the `targets` dir we find two app archives (1.0 and 2.0) and a corresponding patch file.
+rclone configuration
 
-We can serve the repository on localhost as follows (relative to project root):
+- A project-local rclone config file is expected at `./.rclone.conf` (the
+  project sets `RCLONE_CONFIG_FILE` to `repo_settings.RCLONE_CONF`). Copy the
+  `./.rclone.conf.example` to get started.
 
-    python -m http.server -d temp_my_app/repository
+- Create remotes in that config (named however you like) and then set the
+  environment variables `PRIVATE_REMOTE` and `CLIENT_REMOTE` before running the
+  repo scripts. Example `.env` entries:
 
-That's it for the repo-side.
+  PRIVATE_REMOTE=myremote:private-bucket/my_app
+  CLIENT_REMOTE=myremote:public-bucket/my_app BASE_URL=<http://localhost:8000>
 
-### Client side
+The project `repo_settings.py` reads `.env` (via `dotenv`) so you can place
+these in a `.env` file in the repo root for convenience.
 
-On the same system (for convenience):
+High-level workflow
 
-1. To simulate the initial installation on a client device, we do a manual extraction of the archive version 1.0 from the `repository/targets` dir into the `INSTALL_DIR`, specified in `myapp/settings.py`. 
+1. Initialize repository metadata and keys (`repo_init.py`). This creates the
+   repo root metadata and uploads repo config and keystore to the
+   `PRIVATE_REMOTE` via `rclone`.
+1. Build an application bundle (the example uses `pyinstaller` and `main.spec`).
+1. Add the bundle to the repository (`repo_add_bundle.py`) which downloads repo
+   state with `rclone`, creates target metadata, publishes changes, and uploads
+   updated metadata and targets to remotes.
+1. On the client side, the application (when installed) reads
+   `BASE_URL`/metadata and downloads targets from `TARGET_BASE_URL` to update
+   itself.
 
-   #### On Windows:
-   In the default example the `INSTALL_DIR` would be the `C:\users\<username>\AppData\Local\Programs\my_app` directory. 
-   You can use `tar -xf my_app-1.0.tar.gz` in PowerShell to extract the bundle.
+Repo-side (step-by-step)
 
-   #### On macOS:
-   To install the bundle on macOS to the default location, you can use 
-   `mkdir -p ~/Applications/my_app && tar -xf temp_my_app/repository/targets/my_app-1.0.tar.gz -C ~/Applications/my_app`.
+1. Configure `.rclone.conf` and set `PRIVATE_REMOTE` and `CLIENT_REMOTE`, and
+   `BASE_URL`.
 
-2. [optional] To try a patch update, copy the archive version 1.0 into the `TARGET_DIR` (this would normally be done by an installer).
-3. Assuming the repo files are being served on localhost, as described above, we can now run the newly extracted executable, `main.exe` or `main`, depending on platform, directly from the `INSTALL_DIR`, and it will perform an update.
-4. Metadata and targets are stored in the `UPDATE_CACHE_DIR`.
+1. Initialize the repository and keys:
 
-BEWARE: The steps above refer to the `INSTALL_DIR` for the `FROZEN` state, typically `C:\users\<username>\AppData\Local\Programs\my_app` on Windows.
-In development, when running the `myapp` example directly from source, i.e. `FROZEN=False`, the `INSTALL_DIR` is different from the actual install dir that would be used in production. See details in [settings.py][4]. 
+   `uv run repo_init.py`
 
-### Troubleshooting
+   - This will create a `.tufup-repo-config` file and the local development repo
+     under `.tmp/` (as configured in `repo_settings.py`).
+   - `repo_init.py` then uploads `.tufup-repo-config` and the keystore to
+     `PRIVATE_REMOTE` and syncs client-readable metadata to `CLIENT_REMOTE`.
+   - For security the script removes the local `.tufup-repo-config`, repo dir,
+     and keystore after upload.
 
-When playing around with this example-app, it is easy to wind up in an inconsistent state, e.g. due to stale metadata files.
-This may result in tuf role verification errors, for example.
-If this is the case, it is often easiest to start from a clean slate for both repo and client:
+1. Build a distributable bundle. The example uses PyInstaller and `main.spec`.
+   You can build in-place or follow the script used in `repo_add_bundle.py`
+   which puts builds under `.tmp/dist`.
 
-1. for the client-side, remove `UPDATE_CACHE_DIR` and `INSTALL_DIR`
-2. for the repo-side, remove `DEV_DIR` (i.e. the `temp_my_app` dir described above)
-3. remove `.tufup_repo_config`
-4. follow the steps above to set up the repo-side and client-side
+   `pyinstaller main.spec --clean -y --distpath .tmp/dist --workpath .tmp/build`
 
-Alternatively, you could run the `test_update_cycle.ps1` script, which also removes stale example files from the default directories.
+1. Add the bundle to the repo (creates targets metadata and publishes):
 
-[1]: https://github.com/dennisvang/tufup
-[2]: https://theupdateframework.io/
-[3]: https://pyinstaller.org/en/stable/
-[4]: https://github.com/dennisvang/tufup-example/blob/2af43175d39417f9d3d855d7e8fb2cb6ebd3c155/src/myapp/settings.py#L38
-[5]: https://github.com/dennisvang/tufup-example/discussions
-[6]: https://github.com/dennisvang/tufup-example/issues?q=is%3Aissue
-[7]: https://github.com/dennisvang/tufup-example/issues/new
-[8]: https://stackoverflow.com/questions/ask
-[9]: https://github.com/dennisvang/tufup-example/discussions/new?category=q-a
-[10]: https://github.com/dennisvang/tufup/discussions
-[11]: https://github.com/dennisvang/tufup/issues
-[12]: https://learn.microsoft.com/en-ca/powershell/scripting/install/installing-powershell
-[13]: ./test_update_cycle.ps1
+   `python repo_add_bundle.py`
+
+   - This script will pull the keystore and repo metadata from the configured
+     `PRIVATE_REMOTE` / `CLIENT_REMOTE`, build the required repo objects, and
+     publish the changes back up using `rclone`.
+   - By default the example sets `skip_patch=True` for faster testing. Check
+     `repo_add_bundle.py` for options.
+
+Notes about `repo_add_bundle.py` and `repo_init.py`:
+
+- Both scripts use `tufup.repo.Repository` for repository operations and
+  `rclone_python.rclone` for syncing files to/from remotes.
+- `repo_settings.py` defines the development locations used by the scripts (e.g.
+  `.tmp/`, keys dir, repo dir) and also reads the `RCLONE_CONFIG_FILE`.
+
+Client-side (testing an installed application)
+
+1. To simulate an initial install, obtain a target archive (for example the
+   `my_app-1.0.tar.gz` under the `targets` folder in whatever remote you use)
+   and extract it to the `INSTALL_DIR` defined in `src/myapp/settings.py`.
+   - During development the `INSTALL_DIR` and cache directories are under `.tmp`
+     — see `src/myapp/settings.py`.
+1. Run the installed app (or run `src/main.py` in non-frozen mode). The app will
+   use `BASE_URL` (default `http://localhost:8000`) to fetch metadata and
+   targets.
+1. To serve metadata and targets for a client to access, you can either:
+   - Use a simple static server that points to the `CLIENT_REMOTE` content
+     synced locally, for example:
+
+     rclone copy %CLIENT_REMOTE% .tmp/repo_snapshot --config .rclone.conf python
+     -m http.server -d .tmp/repo_snapshot 8000
+
+     Then set `BASE_URL=http://localhost:8000` so the client reads
+     metadata/targets from that server.
+
+   - Or use `rclone serve http` directly from the remote if your remote supports
+     it (see `rclone serve` docs).
+
+Testing the end-to-end update cycle
+
+- A small test helper `test_update_cycle.py` is included as a convenience to run
+  through the repo/client flow. Review it before running in your environment.
+
+Troubleshooting and cleaning up
+
+If something gets into an inconsistent state it is easiest to start from a clean
+slate:
+
+- Remove the local development repo and build artifacts:
+
+  `rm -rf .tmp del .tufup-repo-config` # on Windows cmd.exe
+
+- Remove cached client data (see `src/myapp/settings.py` for `UPDATE_CACHE_DIR`
+  and `INSTALL_DIR`).
+
+- Re-run `repo_init.py` and `repo_add_bundle.py`.
+
+Links and references
+
+- `tufup`: <https://github.com/dennisvang/tufup>
+- `tufup-example`: <https://github.com/dennisvang/tufup-example>
+- TUF (The Update Framework): <https://theupdateframework.io/>
+- PyInstaller: <https://pyinstaller.org/en/stable/>
+- rclone: <https://rclone.org/>
+
+If you have questions or encounter issues, check the project issues/discussions.

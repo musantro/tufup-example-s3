@@ -1,5 +1,8 @@
 import logging
+from pathlib import Path
+import shutil
 
+from rclone_python import rclone
 from tufup.repo import Repository
 
 from myapp.settings import APP_NAME
@@ -10,6 +13,8 @@ from repo_settings import (
     KEYS_DIR,
     REPO_DIR,
     THRESHOLDS,
+    PRIVATE_REMOTE,
+    CLIENT_REMOTE,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,7 +29,8 @@ safe and should *not* be used in production.
 
 """
 
-if __name__ == '__main__':
+
+def main():
     logging.basicConfig(level=logging.INFO)
 
     # Create repository instance
@@ -44,3 +50,17 @@ if __name__ == '__main__':
 
     # Initialize repository (creates keys and root metadata, if necessary)
     repo.initialize()
+
+    rclone.sync('.tufup-repo-config', PRIVATE_REMOTE)
+    rclone.sync(str(REPO_DIR), CLIENT_REMOTE)
+    rclone.sync(str(KEYS_DIR), f'{PRIVATE_REMOTE}/keystore')
+
+    # delete .tufup-repo-config, REPO_DIR and KEYS_DIR for security
+
+    Path('.tufup-repo-config').unlink()
+    shutil.rmtree(REPO_DIR)
+    shutil.rmtree(KEYS_DIR)
+
+
+if __name__ == '__main__':
+    main()

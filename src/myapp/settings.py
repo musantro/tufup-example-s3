@@ -3,9 +3,12 @@ import os
 import pathlib
 import sys
 
+from dotenv import load_dotenv
 from tufup.utils.platform_specific import ON_MAC, ON_WINDOWS
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 # App info
 APP_NAME = 'my_app'  # BEWARE: app name cannot contain whitespace
@@ -26,7 +29,7 @@ MODULE_DIR = pathlib.Path(__file__).resolve().parent
 FROZEN = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 # For development
-DEV_DIR = MODULE_DIR.parent.parent / f'temp_{APP_NAME}'
+DEV_DIR = MODULE_DIR.parent.parent / '.tmp'
 
 # App directories
 if ON_WINDOWS:
@@ -55,8 +58,9 @@ METADATA_DIR = UPDATE_CACHE_DIR / 'metadata'
 TARGET_DIR = UPDATE_CACHE_DIR / 'targets'
 
 # Update-server urls
-METADATA_BASE_URL = 'http://localhost:8000/metadata/'
-TARGET_BASE_URL = 'http://localhost:8000/targets/'
+BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8000')
+METADATA_BASE_URL = f'{BASE_URL}/metadata/'
+TARGET_BASE_URL = f'{BASE_URL}/targets/'
 
 # Location of trusted root metadata file
 TRUSTED_ROOT_SRC = MODULE_DIR.parent / 'root.json'

@@ -1,0 +1,25 @@
+[project]
+name = "myapp"
+version = "0.1.0"
+description = "Example app for tufup."
+readme = "README.md"
+requires-python = ">=3.11.8"
+dependencies = ["python-dotenv>=1.1.1", "rich>=14.1.0", "tufup"]
+
+[build-system]
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+tufup = { git = "https://github.com/dennisvang/tufup.git", rev = "master" }
+
+[dependency-groups]
+dev = [
+  "pyinstaller>=6.15.0",
+  "rclone-python>=0.1.23",
+  "ruff>=0.12.10",
+  "setuptools>=61.0.0",
+]
+
+[tool.ruff.format]
+quote-style = "single"
